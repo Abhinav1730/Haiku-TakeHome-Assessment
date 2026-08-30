@@ -64,23 +64,6 @@ Also check: family “none” is exclusive; unused product rows have `duration/h
 
 Manually: finish as a rushed waiting-room patient on a phone; finish with a story + confirm as a calm patient; refresh mid-flow (answers restore).
 
-## 2-minute recording notes
-
-- 0:00 Philosophy — completion, not a chat; software fills, patient confirms
-- 0:20 Story → extract → confirm three fields
-- 0:50 Tap leftovers; Q12 as chips then cards, not a spreadsheet
-- 1:20 Back, none-of-these, review
-- 1:45 Done JSON — this is the contract
-- Decisions: (1) story-then-confirm (2) no tables on mobile (3) patient owns every AI field
-
-## With one more week
-
-Persistence beyond localStorage, real clinic shadowing, accessibility audit, drop-off per question, better Hinglish STT — not more AI for its own sake.
-
-## Deploy (Vercel)
-
-From this folder (you must be logged in to Vercel):
-
 ```bash
 npx vercel --yes
 npx vercel --prod --yes
