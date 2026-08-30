@@ -763,6 +763,7 @@ function StoryStep({ intake }: { intake: ReturnType<typeof useIntake> }) {
         placeholder="When it started, where you notice it, anything you’ve tried…"
       />
       <VoiceCapture
+        continuous
         disabled={busy}
         onTranscript={(text) => update({ story: draft.story ? `${draft.story} ${text}` : text })}
       />

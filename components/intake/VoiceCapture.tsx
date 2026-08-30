@@ -5,15 +5,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
+type SpeechResult = {
+  isFinal: boolean;
+  0: { transcript: string };
+};
+
 type SpeechRec = {
   lang: string;
   interimResults: boolean;
   continuous: boolean;
-  onresult: ((ev: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: (() => void) | null;
+  onresult: ((ev: { resultIndex: number; results: ArrayLike<SpeechResult> }) => void) | null;
+  onerror: ((ev: { error: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
+  abort: () => void;
 };
 
 function getSpeechRecognition(): (new () => SpeechRec) | null {
@@ -25,137 +31,110 @@ function getSpeechRecognition(): (new () => SpeechRec) | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result);
-      const comma = result.indexOf(",");
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
 export function VoiceCapture({
   onTranscript,
   disabled,
+  continuous = false,
 }: {
   onTranscript: (text: string) => void;
   disabled?: boolean;
+  /** Longer dictation on the opening story screen */
+  continuous?: boolean;
 }) {
-  const [recording, setRecording] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const mediaRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const [listening, setListening] = useState(false);
+  const [supported, setSupported] = useState(true);
   const recRef = useRef<SpeechRec | null>(null);
+  const transcriptRef = useRef("");
 
   useEffect(() => {
+    setSupported(getSpeechRecognition() !== null);
     return () => {
-      recRef.current?.stop();
-      if (mediaRef.current?.state === "recording") mediaRef.current.stop();
-    };
-  }, []);
-
-  const transcribeBlob = useCallback(
-    async (blob: Blob) => {
-      setBusy(true);
-      try {
-        const base64 = await blobToBase64(blob);
-        const format = blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm";
-        const res = await fetch("/api/transcribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ audio: base64, format }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Transcription failed");
-        if (data.text) onTranscript(data.text);
-      } catch (err) {
-        toast.message("Couldn’t transcribe that. You can type instead.", {
-          description: err instanceof Error ? err.message : undefined,
-        });
-      } finally {
-        setBusy(false);
-      }
-    },
-    [onTranscript],
-  );
-
-  const startBrowserSpeech = useCallback(() => {
-    const Ctor = getSpeechRecognition();
-    if (!Ctor) {
-      toast.message("Voice isn’t available here. Please type.");
-      return;
-    }
-    const rec = new Ctor();
-    rec.lang = "en-IN";
-    rec.interimResults = false;
-    rec.continuous = false;
-    rec.onresult = (ev) => {
-      const text = Array.from(ev.results)
-        .map((r) => r[0]?.transcript ?? "")
-        .join(" ")
-        .trim();
-      if (text) onTranscript(text);
-    };
-    rec.onerror = () => toast.message("I didn’t quite catch that. Try again or type.");
-    rec.onend = () => {
-      setRecording(false);
+      recRef.current?.abort();
       recRef.current = null;
     };
-    recRef.current = rec;
-    rec.start();
-    setRecording(true);
-  }, [onTranscript]);
+  }, []);
 
   const stop = useCallback(() => {
     recRef.current?.stop();
-    if (mediaRef.current?.state === "recording") mediaRef.current.stop();
-    setRecording(false);
+    setListening(false);
   }, []);
 
-  const start = useCallback(async () => {
-    if (recording) {
+  const start = useCallback(() => {
+    if (listening) {
       stop();
       return;
     }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mime = MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : MediaRecorder.isTypeSupported("audio/mp4")
-          ? "audio/mp4"
-          : "";
-      const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size) chunksRef.current.push(e.data);
-      };
-      recorder.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        if (blob.size > 0) void transcribeBlob(blob);
-      };
-      mediaRef.current = recorder;
-      recorder.start();
-      setRecording(true);
-    } catch {
-      startBrowserSpeech();
+
+    const Ctor = getSpeechRecognition();
+    if (!Ctor) {
+      toast.message("Voice isn’t available in this browser. Please type instead.");
+      return;
     }
-  }, [recording, startBrowserSpeech, stop, transcribeBlob]);
+
+    const rec = new Ctor();
+    transcriptRef.current = "";
+
+    rec.lang = "en-IN";
+    rec.interimResults = false;
+    rec.continuous = continuous;
+
+    rec.onresult = (ev) => {
+      const chunk = Array.from(ev.results)
+        .slice(ev.resultIndex)
+        .filter((r) => r.isFinal)
+        .map((r) => r[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+      if (chunk) {
+        transcriptRef.current = transcriptRef.current
+          ? `${transcriptRef.current} ${chunk}`
+          : chunk;
+      }
+    };
+
+    rec.onerror = (ev) => {
+      if (ev.error === "aborted" || ev.error === "no-speech") return;
+      toast.message("I didn’t quite catch that. Try again or type.");
+      setListening(false);
+      recRef.current = null;
+    };
+
+    rec.onend = () => {
+      setListening(false);
+      recRef.current = null;
+      const text = transcriptRef.current.trim();
+      if (text) onTranscript(text);
+    };
+
+    try {
+      recRef.current = rec;
+      rec.start();
+      setListening(true);
+    } catch {
+      toast.message("Couldn’t start the microphone. Please type instead.");
+      recRef.current = null;
+      setListening(false);
+    }
+  }, [continuous, listening, onTranscript, stop]);
+
+  if (!supported) {
+    return (
+      <p className="text-sm text-stone-500">
+        Voice input needs Chrome or Edge. You can type your answer instead.
+      </p>
+    );
+  }
 
   return (
     <Button
       type="button"
       variant="outline"
       onClick={start}
-      disabled={disabled || busy}
-      aria-pressed={recording}
+      disabled={disabled}
+      aria-pressed={listening}
     >
-      {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-      {busy ? "Listening…" : recording ? "Stop" : "Speak instead"}
+      {listening ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+      {listening ? "Stop" : "Speak instead"}
     </Button>
   );
 }

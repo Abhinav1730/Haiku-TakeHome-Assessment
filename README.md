@@ -39,7 +39,7 @@ Q6/Q7 (periods, pregnancy) are gated by “Should we ask about periods and pregn
 |---|---|
 | Next.js, React, Tailwind | Question engine, skip/exclusivity, mapper |
 | OpenRouter `:free` chat for extraction | Per-question UIs (cards, chips, expand-only matrices) |
-| OpenRouter Whisper STT (optional voice) | Confirmation of extracted fields |
+| Browser Web Speech API (voice) | Confirmation of extracted fields |
 | Vercel hosting | localStorage resume, fixture tests |
 | Geist, Lucide, Sonner | Copy and clinical tone |
 
@@ -48,7 +48,7 @@ We did **not** build a chatbot, TTS, auth, or a database. Voice is never require
 ### Models
 
 - Extract: `meta-llama/llama-3.3-70b-instruct:free`, then `google/gemma-3-12b-it:free`, then `meta-llama/llama-3.2-3b-instruct:free`
-- STT: `openai/whisper-large-v3`, then `openai/whisper-1` (paid on OpenRouter). If STT fails, the mic falls back to the browser Web Speech API, then typing.
+- Voice: browser **Web Speech API** (Chrome/Edge, free, no API key). Typing always works.
 
 `:free` chat is $0 but rate-limited. If extract 429s, the UI continues question-by-question.
 
